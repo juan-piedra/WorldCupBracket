@@ -145,6 +145,10 @@ footer{margin-top:34px;border-top:1px solid var(--line);padding-top:16px;color:v
 *:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:6px}
 @media (max-width:560px){:root{--cell-h:96px;--gap:24px}.wrap{padding:18px 13px 80px}.round{min-width:140px}.tab{padding:9px 13px;font-size:13px}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.profiles{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--pitch-2)}
+.pf-label{font-family:"Oswald",sans-serif;text-transform:uppercase;letter-spacing:.08em;font-size:12px;color:var(--muted)}
+.profiles select{font-family:"Oswald",sans-serif;font-size:14px;font-weight:600;color:var(--chalk);background:var(--pitch-3);border:1px solid var(--line-2);border-radius:9px;padding:8px 12px;cursor:pointer;max-width:55vw}
+.pf-btn{padding:7px 11px;font-size:12.5px}
 </style>
 </head>
 <body>
@@ -164,6 +168,7 @@ footer{margin-top:34px;border-top:1px solid var(--line);padding-top:16px;color:v
       <button class="btn ghost" id="btnReset" title="Clear everything">&#8634; Clear all</button>
     </div>
   </div>
+  <div class="profiles" id="profiles"></div>
   <div class="tabs" role="tablist" aria-label="Sections">
     <button class="tab" id="tabGroups" role="tab" aria-selected="true" aria-controls="viewGroups">Groups &amp; Thirds</button>
     <button class="tab" id="tabBracket" role="tab" aria-selected="false" aria-controls="viewBracket">Knockout Bracket</button>
@@ -251,7 +256,11 @@ var ROUNDS=[
  {key:"SF",label:"Semi-finals",feeder:true,ids:[101,102]},
  {key:"FIN",label:"Final",feeder:false,ids:[104]}
 ];
-var KEY="wc2026_bracket_v1";
+var BASE="wc2026_bracket_v1";
+var PKEY="wc2026_profiles_v1";
+var profiles={list:[],current:null};
+function dataKey(){return BASE+"__"+profiles.current;}
+function saveProfiles(){if(!storageOK)return;try{localStorage.setItem(PKEY,JSON.stringify(profiles));}catch(e){}}
 var state={orders:{},thirds:{},picks:{}};
 var thirdAssign={};
 var lastChampion=null;
@@ -259,8 +268,8 @@ function hasThird(g){return !!state.thirds[g];}
 function thirdCount(){var n=0;for(var k in state.thirds){if(state.thirds[k])n++;}return n;}
 var storageOK=false;
 try{localStorage.setItem("__t","1");localStorage.removeItem("__t");storageOK=true;}catch(e){storageOK=false;}
-function save(){if(!storageOK)return;try{localStorage.setItem(KEY,JSON.stringify({orders:state.orders,thirds:state.thirds,picks:state.picks}));}catch(e){}}
-function load(){if(!storageOK)return;try{var s=JSON.parse(localStorage.getItem(KEY)||"null");if(s){state.orders=s.orders||{};state.thirds=s.thirds||{};state.picks=s.picks||{};}}catch(e){}}
+function save(){if(!storageOK)return;try{localStorage.setItem(dataKey(),JSON.stringify({orders:state.orders,thirds:state.thirds,picks:state.picks}));}catch(e){}}
+function load(){if(!storageOK)return;try{var s=JSON.parse(localStorage.getItem(dataKey())||"null");if(s){state.orders=s.orders||{};state.thirds=s.thirds||{};state.picks=s.picks||{};}}catch(e){}}
 function groupComplete(g){return state.orders[g]&&state.orders[g].length===3;}
 function rankOf(g,id){var o=state.orders[g]||[];var i=o.indexOf(id);if(i>=0)return i+1;if(o.length===3)return 4;return 0;}
 function resolve(src){
@@ -462,7 +471,47 @@ el("tabGroups").addEventListener("click",function(){showTab("groups");});
 el("tabBracket").addEventListener("click",function(){showTab("bracket");});
 el("btnRandom").addEventListener("click",randomizeAll);
 el("btnReset").addEventListener("click",resetAll);
-load();computeThirds();validatePicks();lastChampion=state.picks[104]||null;render();
+function initProfiles(){
+ var p=null;try{p=JSON.parse(localStorage.getItem(PKEY)||"null");}catch(e){p=null;}
+ if(p&&p.list&&p.list.length){profiles=p;}
+ else{var id="b"+Date.now();profiles={list:[{id:id,name:"Bracket 1"}],current:id};
+  try{var old=localStorage.getItem(BASE);if(old){localStorage.setItem(BASE+"__"+id,old);}}catch(e){}
+  saveProfiles();}
+ if(!profiles.current||!profiles.list.some(function(x){return x.id===profiles.current;}))profiles.current=profiles.list[0].id;
+}
+function loadCurrent(){state={orders:{},thirds:{},picks:{}};load();computeThirds();validatePicks();lastChampion=state.picks[104]||null;}
+function switchProfile(id){if(id===profiles.current)return;profiles.current=id;saveProfiles();loadCurrent();render();}
+function newProfile(){
+ var name=prompt("Name this bracket (a friend's name works great):","Bracket "+(profiles.list.length+1));
+ if(name===null)return;name=(name.trim()||("Bracket "+(profiles.list.length+1)));
+ var id="b"+Date.now();profiles.list.push({id:id,name:name});profiles.current=id;saveProfiles();
+ state={orders:{},thirds:{},picks:{}};lastChampion=null;save();renderProfiles();render();
+}
+function renameProfile(){
+ var cur=profiles.list.filter(function(x){return x.id===profiles.current;})[0];if(!cur)return;
+ var name=prompt("Rename this bracket:",cur.name);if(name===null)return;cur.name=(name.trim()||cur.name);saveProfiles();renderProfiles();
+}
+function deleteProfile(){
+ if(profiles.list.length<=1){alert("This is your only bracket. Make another first if you want to remove this one.");return;}
+ var cur=profiles.list.filter(function(x){return x.id===profiles.current;})[0];
+ if(!confirm("Delete bracket \""+(cur?cur.name:"")+"\" and all its picks? This can't be undone."))return;
+ try{localStorage.removeItem(dataKey());}catch(e){}
+ profiles.list=profiles.list.filter(function(x){return x.id!==profiles.current;});
+ profiles.current=profiles.list[0].id;saveProfiles();loadCurrent();renderProfiles();render();
+}
+function renderProfiles(){
+ var opts=profiles.list.map(function(x){return '<option value="'+x.id+'"'+(x.id===profiles.current?" selected":"")+'>'+esc(x.name)+'</option>';}).join("");
+ el("profiles").innerHTML='<span class="pf-label">Whose bracket?</span>'+
+  '<select id="pfSelect" aria-label="Choose which bracket">'+opts+'</select>'+
+  '<button class="btn ghost pf-btn" id="pfNew">+ New</button>'+
+  '<button class="btn ghost pf-btn" id="pfRename">Rename</button>'+
+  '<button class="btn ghost pf-btn" id="pfDelete">Delete</button>';
+ el("pfSelect").addEventListener("change",function(e){switchProfile(e.target.value);});
+ el("pfNew").addEventListener("click",newProfile);
+ el("pfRename").addEventListener("click",renameProfile);
+ el("pfDelete").addEventListener("click",deleteProfile);
+}
+initProfiles();loadCurrent();renderProfiles();render();
 })();
 </script>
 </body>
